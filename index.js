@@ -59,33 +59,54 @@ function connectWS() {
 
   ws.on("open", () => {
     console.log("ws connected");
+
+    // coba format subscribe yang berbeda
     ws.send(JSON.stringify({
-      type: "subscribe",
-      channel: "market.CC-USDC.ticker"
+      op: "subscribe",
+      args: ["market.CC-USDC.ticker"]
     }));
-    console.log("subscribe sent");
+    console.log("subscribe sent (op format)");
   });
 
   ws.on("message", (msg) => {
-    // log semua raw message dulu buat debug
     const raw = msg.toString();
-    console.log("raw ws message:", raw);
+    console.log("raw:", raw);
 
     try {
       const parsed = JSON.parse(raw);
-      console.log("parsed channel:", parsed.channel);
-      console.log("parsed data:", JSON.stringify(parsed.data));
 
-      if (
-        parsed.channel === "market.CC-USDC.ticker" &&
-        parsed.data?.price
-      ) {
-        const newPrice = parseFloat(parsed.data.price);
+      // handle ping dari server, balas pong
+      if (parsed.op === "ping") {
+        ws.send(JSON.stringify({ op: "pong" }));
+        console.log("pong sent");
+        return;
+      }
+
+      // coba berbagai kemungkinan lokasi price
+      const price =
+        parsed.data?.price ||
+        parsed.price ||
+        parsed.data?.last ||
+        parsed.last ||
+        null;
+
+      const channel =
+        parsed.channel ||
+        parsed.topic ||
+        parsed.arg ||
+        parsed.subject ||
+        "";
+
+      console.log("channel:", channel, "| price:", price);
+
+      if (price && (channel.includes("CC") || channel.includes("ticker"))) {
+        const newPrice = parseFloat(price);
         if (!isNaN(newPrice) && newPrice > 0) {
           CC_PRICE = newPrice;
-          console.log("cc price:", CC_PRICE);
+          console.log("cc price updated:", CC_PRICE);
         }
       }
+
     } catch (e) {
       console.log("parse error:", e.message);
     }
@@ -144,13 +165,13 @@ async function initialCheck() {
   console.log("waiting cc price...");
 
   let retries = 0;
-  while (!CC_PRICE && retries < 20) {
+  while (!CC_PRICE && retries < 30) {
     await new Promise(r => setTimeout(r, 1000));
     retries++;
   }
 
   if (!CC_PRICE) {
-    console.log("gagal ambil harga cc setelah 20 detik");
+    console.log("gagal ambil harga cc setelah 30 detik");
     return;
   }
 
