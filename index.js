@@ -239,16 +239,12 @@ setInterval(async () => {
 
   const { feeCC, feeUSD, feeAmulet } = result;
 
-  users.forEach(chatId => {
-    bot.sendMessage(
-      chatId,
-      `fee update\n\namulet: ${feeAmulet.toFixed(4)}\nusd: $${feeUSD.toFixed(4)}\ncc: ${feeCC.toFixed(4)}`
-    );
-  });
-
   if (feeCC < 0.2) {
     users.forEach(chatId => {
-      bot.sendMessage(chatId, `🚨 fee cuma ${feeCC.toFixed(4)} cc`);
+      bot.sendMessage(
+        chatId,
+        `🚨 fee cuma ${feeCC.toFixed(4)} cc\n\namulet: ${feeAmulet.toFixed(4)}\nusd: $${feeUSD.toFixed(4)}`
+      );
     });
   }
 
