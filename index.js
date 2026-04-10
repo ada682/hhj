@@ -5,7 +5,7 @@ import WebSocket from "ws";
 // ================= env =================
 const TOKEN = process.env.BOT_TOKEN;
 const CANTEX_COOKIE = process.env.CANTEX_COOKIE;
-const INTERVAL = 5000;
+const INTERVAL = 60000;
 // =======================================
 
 const bot = new TelegramBot(TOKEN, {
@@ -27,7 +27,7 @@ bot.on("polling_error", (err) => {
 
 let users = new Set();
 let CC_PRICE = 0;
-let cookieExpiredNotified = false; // biar notif cuma sekali
+let cookieExpiredNotified = false;
 
 // ================= payload =================
 const payload = {
@@ -42,8 +42,8 @@ const payload = {
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
   users.add(chatId);
-  cookieExpiredNotified = false; // reset kalau user reconnect
-  bot.sendMessage(chatId, "otw cek gas fee cc mok");
+  cookieExpiredNotified = false;
+  bot.sendMessage(chatId, "bot aktif, otw cek gas fee cc mok");
 });
 
 bot.onText(/\/harga/, (msg) => {
@@ -53,6 +53,24 @@ bot.onText(/\/harga/, (msg) => {
   } else {
     bot.sendMessage(chatId, "harga cc belum tersedia, tunggu sebentar");
   }
+});
+
+bot.onText(/\/fee/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!CC_PRICE) {
+    bot.sendMessage(chatId, "harga cc belum tersedia, tunggu sebentar");
+    return;
+  }
+  const result = await checkFee();
+  if (!result) {
+    bot.sendMessage(chatId, "gagal ambil fee, coba lagi");
+    return;
+  }
+  const { feeAmulet, feeUSD, feeCC } = result;
+  bot.sendMessage(
+    chatId,
+    `fee sekarang\n\namulet: ${feeAmulet.toFixed(4)}\nusd: $${feeUSD.toFixed(4)}\ncc: ${feeCC.toFixed(4)}`
+  );
 });
 
 // ================= websocket =================
@@ -146,7 +164,6 @@ async function checkFee() {
       }
     );
 
-    // kalau berhasil, reset flag expired
     if (cookieExpiredNotified) {
       cookieExpiredNotified = false;
       notifyAll("✅ cookie sudah valid lagi, bot normal kembali");
@@ -171,7 +188,7 @@ async function checkFee() {
       if (!cookieExpiredNotified) {
         cookieExpiredNotified = true;
         notifyAll(
-          "cookie cantex expired!\n\n" +
+          "⚠️ cookie cantex expired!\n\n" +
           "bot tidak bisa ambil data fee.\n" +
           "update env CANTEX_COOKIE dengan cookie baru dari browser, lalu restart bot."
         );
@@ -231,7 +248,7 @@ setInterval(async () => {
 
   if (feeCC < 0.2) {
     users.forEach(chatId => {
-      bot.sendMessage(chatId, `fee cuma ${feeCC.toFixed(4)} cc`);
+      bot.sendMessage(chatId, `🚨 fee cuma ${feeCC.toFixed(4)} cc`);
     });
   }
 
