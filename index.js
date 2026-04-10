@@ -26,17 +26,17 @@ bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
   users.add(chatId);
 
-  bot.sendMessage(chatId, "otw monitor gas fee mok");
+  bot.sendMessage(chatId, "otw cek gas fee cc mok");
 });
 
 // ================= WEBSOCKET =================
 function connectWS() {
-  console.log("Connecting WS...");
+  console.log("🔌 Connecting WS...");
 
   const ws = new WebSocket("wss://api.cantex.io/v1/ws/public");
 
   ws.on("open", () => {
-    console.log("WS Connected");
+    console.log("✅ WS Connected");
 
     ws.send(JSON.stringify({
       type: "subscribe",
@@ -56,12 +56,12 @@ function connectWS() {
   });
 
   ws.on("close", () => {
-    console.log("WS Disconnected, reconnecting...");
+    console.log("❌ WS Disconnected, reconnecting...");
     setTimeout(connectWS, 3000);
   });
 
   ws.on("error", (err) => {
-    console.log("WS Error:", err.message);
+    console.log("⚠️ WS Error:", err.message);
     ws.close();
   });
 }
@@ -98,10 +98,43 @@ async function checkFee() {
     return { feeAmulet: totalAmulet, feeUSD, feeCC };
 
   } catch (err) {
-    console.log("API Error:", err.message);
+    console.log("❌ API Error:", err.message);
     return null;
   }
 }
+
+// ================= INITIAL CHECK =================
+async function initialCheck() {
+  console.log("⏳ Waiting CC price...");
+
+  let retries = 0;
+  while (!CC_PRICE && retries < 10) {
+    await new Promise(r => setTimeout(r, 1000));
+    retries++;
+  }
+
+  if (!CC_PRICE) {
+    console.log("❌ Gagal ambil harga CC");
+    return;
+  }
+
+  console.log("CC Price:", CC_PRICE);
+
+  const result = await checkFee();
+  if (!result) {
+    console.log("❌ Gagal ambil fee");
+    return;
+  }
+
+  const { feeAmulet, feeUSD, feeCC } = result;
+
+  console.log("GAS CHECK");
+  console.log("Amulet:", feeAmulet);
+  console.log("USD:", feeUSD);
+  console.log("CC:", feeCC);
+}
+
+initialCheck();
 
 // ================= LOOP =================
 setInterval(async () => {
@@ -133,9 +166,10 @@ setInterval(async () => {
 
 }, INTERVAL);
 
+// ================= PING DUMMY =================
 setInterval(async () => {
   try {
     await axios.get("https://api.cantex.io/v2/pools/quote");
-    console.log("Ping OK");
+    console.log("🏓 Ping OK");
   } catch {}
 }, 60000);
