@@ -4,6 +4,7 @@ import WebSocket from "ws";
 
 // ================= env =================
 const TOKEN = process.env.BOT_TOKEN;
+const CANTEX_COOKIE = process.env.CANTEX_COOKIE;
 const INTERVAL = 5000;
 // =======================================
 
@@ -26,6 +27,7 @@ bot.on("polling_error", (err) => {
 
 let users = new Set();
 let CC_PRICE = 0;
+let cookieExpiredNotified = false; // biar notif cuma sekali
 
 // ================= payload =================
 const payload = {
@@ -40,7 +42,8 @@ const payload = {
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
   users.add(chatId);
-  bot.sendMessage(chatId, "bot aktif, otw cek gas fee cc mok");
+  cookieExpiredNotified = false; // reset kalau user reconnect
+  bot.sendMessage(chatId, "otw cek gas fee cc mok");
 });
 
 bot.onText(/\/harga/, (msg) => {
@@ -72,14 +75,12 @@ function connectWS() {
 
   ws.on("message", (msg) => {
     const raw = msg.toString();
-    console.log("raw ws message:", raw);
 
     try {
       const parsed = JSON.parse(raw);
 
       if (parsed.op === "ping") {
         ws.send(JSON.stringify({ op: "pong" }));
-        console.log("pong sent");
         return;
       }
 
@@ -95,9 +96,6 @@ function connectWS() {
 
       const channel = parsed.channel || "";
       const price = parsed.data?.price || null;
-
-      console.log("parsed channel:", channel);
-      console.log("parsed data:", parsed.data);
 
       if (price && channel === "market.CC-USDC.ticker") {
         const newPrice = parseFloat(price);
@@ -125,6 +123,13 @@ function connectWS() {
 
 connectWS();
 
+// ================= notif ke semua user =================
+function notifyAll(text) {
+  users.forEach(chatId => {
+    bot.sendMessage(chatId, text).catch(() => {});
+  });
+}
+
 // ================= api fee =================
 async function checkFee() {
   try {
@@ -135,10 +140,17 @@ async function checkFee() {
         headers: {
           "content-type": "text/plain;charset=UTF-8",
           "origin": "https://www.cantex.io",
-          "referer": "https://www.cantex.io/"
+          "referer": "https://www.cantex.io/",
+          "cookie": CANTEX_COOKIE
         }
       }
     );
+
+    // kalau berhasil, reset flag expired
+    if (cookieExpiredNotified) {
+      cookieExpiredNotified = false;
+      notifyAll("✅ cookie sudah valid lagi, bot normal kembali");
+    }
 
     const data = res.data;
     const networkFee = parseFloat(data.fees.network_fee.amount);
@@ -152,7 +164,22 @@ async function checkFee() {
     return { feeAmulet: totalAmulet, feeUSD, feeCC };
 
   } catch (err) {
-    console.log("api error:", err.message);
+    const status = err.response?.status;
+
+    if (status === 401) {
+      console.log("cookie expired / unauthorized");
+      if (!cookieExpiredNotified) {
+        cookieExpiredNotified = true;
+        notifyAll(
+          "cookie cantex expired!\n\n" +
+          "bot tidak bisa ambil data fee.\n" +
+          "update env CANTEX_COOKIE dengan cookie baru dari browser, lalu restart bot."
+        );
+      }
+    } else {
+      console.log("api error:", err.message);
+    }
+
     return null;
   }
 }
@@ -175,10 +202,7 @@ async function initialCheck() {
   console.log("cc price ready:", CC_PRICE);
 
   const result = await checkFee();
-  if (!result) {
-    console.log("gagal ambil fee");
-    return;
-  }
+  if (!result) return;
 
   const { feeAmulet, feeUSD, feeCC } = result;
   console.log("gas check");
