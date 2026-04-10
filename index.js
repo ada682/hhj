@@ -55,51 +55,51 @@ bot.onText(/\/harga/, (msg) => {
 // ================= websocket =================
 function connectWS() {
   console.log("connecting ws...");
-  const ws = new WebSocket("wss://api.cantex.io/v1/ws/public");
+  const ws = new WebSocket("wss://api.cantex.io/v1/ws/public", {
+    headers: {
+      "origin": "https://www.cantex.io"
+    }
+  });
 
   ws.on("open", () => {
     console.log("ws connected");
-
-    // coba format subscribe yang berbeda
     ws.send(JSON.stringify({
       op: "subscribe",
-      args: ["market.CC-USDC.ticker"]
+      channels: ["market.CC-USDC.ticker"]
     }));
-    console.log("subscribe sent (op format)");
+    console.log("subscribe sent");
   });
 
   ws.on("message", (msg) => {
     const raw = msg.toString();
-    console.log("raw:", raw);
+    console.log("raw ws message:", raw);
 
     try {
       const parsed = JSON.parse(raw);
 
-      // handle ping dari server, balas pong
       if (parsed.op === "ping") {
         ws.send(JSON.stringify({ op: "pong" }));
         console.log("pong sent");
         return;
       }
 
-      // coba berbagai kemungkinan lokasi price
-      const price =
-        parsed.data?.price ||
-        parsed.price ||
-        parsed.data?.last ||
-        parsed.last ||
-        null;
+      if (parsed.op === "subscribed") {
+        console.log("subscribed to:", parsed.channels);
+        return;
+      }
 
-      const channel =
-        parsed.channel ||
-        parsed.topic ||
-        parsed.arg ||
-        parsed.subject ||
-        "";
+      if (parsed.op === "error") {
+        console.log("server error:", parsed.message);
+        return;
+      }
 
-      console.log("channel:", channel, "| price:", price);
+      const channel = parsed.channel || "";
+      const price = parsed.data?.price || null;
 
-      if (price && (channel.includes("CC") || channel.includes("ticker"))) {
+      console.log("parsed channel:", channel);
+      console.log("parsed data:", parsed.data);
+
+      if (price && channel === "market.CC-USDC.ticker") {
         const newPrice = parseFloat(price);
         if (!isNaN(newPrice) && newPrice > 0) {
           CC_PRICE = newPrice;
@@ -141,14 +141,11 @@ async function checkFee() {
     );
 
     const data = res.data;
-
     const networkFee = parseFloat(data.fees.network_fee.amount);
     const adminFee = parseFloat(data.fees.amount_admin);
     const liquidityFee = parseFloat(data.fees.amount_liquidity);
-
     const totalAmulet = networkFee + adminFee + liquidityFee;
     const tradePrice = parseFloat(data.trade_price);
-
     const feeUSD = totalAmulet * tradePrice;
     const feeCC = CC_PRICE ? (feeUSD / CC_PRICE) : 0;
 
