@@ -1,6 +1,6 @@
-const axios = require("axios");
-const TelegramBot = require("node-telegram-bot-api");
-const WebSocket = require("ws");
+import axios from "axios";
+import TelegramBot from "node-telegram-bot-api";
+import WebSocket from "ws";
 
 // ================= env =================
 const TOKEN = process.env.BOT_TOKEN;
@@ -48,7 +48,7 @@ bot.onText(/\/harga/, (msg) => {
   if (CC_PRICE) {
     bot.sendMessage(chatId, `harga cc sekarang: $${CC_PRICE}`);
   } else {
-    bot.sendMessage(chatId, "harga cc belum tersedia, tunggu sebentar");
+    bot.sendMessage(chatId, "harga cc, tunggu sebentar");
   }
 });
 
