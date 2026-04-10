@@ -40,7 +40,7 @@ const payload = {
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
   users.add(chatId);
-  bot.sendMessage(chatId, "otw cek gas fee cc mok");
+  bot.sendMessage(chatId, "bot aktif, otw cek gas fee cc mok");
 });
 
 bot.onText(/\/harga/, (msg) => {
@@ -48,7 +48,7 @@ bot.onText(/\/harga/, (msg) => {
   if (CC_PRICE) {
     bot.sendMessage(chatId, `harga cc sekarang: $${CC_PRICE}`);
   } else {
-    bot.sendMessage(chatId, "harga cc, tunggu sebentar");
+    bot.sendMessage(chatId, "harga cc belum tersedia, tunggu sebentar");
   }
 });
 
@@ -63,11 +63,18 @@ function connectWS() {
       type: "subscribe",
       channel: "market.CC-USDC.ticker"
     }));
+    console.log("subscribe sent");
   });
 
   ws.on("message", (msg) => {
+    // log semua raw message dulu buat debug
+    const raw = msg.toString();
+    console.log("raw ws message:", raw);
+
     try {
-      const parsed = JSON.parse(msg.toString());
+      const parsed = JSON.parse(raw);
+      console.log("parsed channel:", parsed.channel);
+      console.log("parsed data:", JSON.stringify(parsed.data));
 
       if (
         parsed.channel === "market.CC-USDC.ticker" &&
@@ -79,7 +86,9 @@ function connectWS() {
           console.log("cc price:", CC_PRICE);
         }
       }
-    } catch {}
+    } catch (e) {
+      console.log("parse error:", e.message);
+    }
   });
 
   ws.on("close", () => {
