@@ -43,7 +43,7 @@ bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
   users.add(chatId);
   cookieExpiredNotified = false;
-  bot.sendMessage(chatId, "bot aktif, otw cek gas fee cc mok");
+  bot.sendMessage(chatId, "otw cek gas fee cc mok");
 });
 
 bot.onText(/\/harga/, (msg) => {
