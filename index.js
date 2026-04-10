@@ -1,18 +1,33 @@
-import axios from "axios";
-import TelegramBot from "node-telegram-bot-api";
-import WebSocket from "ws";
+const axios = require("axios");
+const TelegramBot = require("node-telegram-bot-api");
+const WebSocket = require("ws");
 
-// ================= ENV =================
+// ================= env =================
 const TOKEN = process.env.BOT_TOKEN;
 const INTERVAL = 5000;
-
 // =======================================
 
-const bot = new TelegramBot(TOKEN, { polling: true });
+const bot = new TelegramBot(TOKEN, {
+  polling: {
+    interval: 300,
+    autoStart: true,
+    params: { timeout: 10 }
+  }
+});
+
+bot.on("polling_error", (err) => {
+  if (err.code === "ETELEGRAM" && err.message.includes("409")) {
+    console.error("409 conflict: instance lain masih jalan, tunggu 15 detik lalu restart...");
+    setTimeout(() => process.exit(1), 15000);
+  } else {
+    console.error("polling error:", err.message);
+  }
+});
+
 let users = new Set();
 let CC_PRICE = 0;
 
-// ================= PAYLOAD =================
+// ================= payload =================
 const payload = {
   sellInstrumentId: "Amulet",
   sellInstrumentAdmin: "DSO::1220b1431ef217342db44d516bb9befde802be7d8899637d290895fa58880f19accc",
@@ -21,23 +36,29 @@ const payload = {
   buyInstrumentAdmin: "decentralized-usdc-interchain-rep::12208115f1e168dd7e792320be9c4ca720c751a02a3053c7606e1c1cd3dad9bf60ef"
 };
 
-// ================= TELEGRAM =================
+// ================= telegram =================
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
   users.add(chatId);
-
   bot.sendMessage(chatId, "otw cek gas fee cc mok");
 });
 
-// ================= WEBSOCKET =================
-function connectWS() {
-  console.log("🔌 Connecting WS...");
+bot.onText(/\/harga/, (msg) => {
+  const chatId = msg.chat.id;
+  if (CC_PRICE) {
+    bot.sendMessage(chatId, `harga cc sekarang: $${CC_PRICE}`);
+  } else {
+    bot.sendMessage(chatId, "harga cc belum tersedia, tunggu sebentar");
+  }
+});
 
+// ================= websocket =================
+function connectWS() {
+  console.log("connecting ws...");
   const ws = new WebSocket("wss://api.cantex.io/v1/ws/public");
 
   ws.on("open", () => {
-    console.log("✅ WS Connected");
-
+    console.log("ws connected");
     ws.send(JSON.stringify({
       type: "subscribe",
       channel: "market.CC-USDC.ticker"
@@ -46,29 +67,35 @@ function connectWS() {
 
   ws.on("message", (msg) => {
     try {
-      const data = JSON.parse(msg);
+      const parsed = JSON.parse(msg.toString());
 
-      if (data.channel === "market.CC-USDC.ticker") {
-        CC_PRICE = parseFloat(data.data.price);
-        console.log("CC Price:", CC_PRICE);
+      if (
+        parsed.channel === "market.CC-USDC.ticker" &&
+        parsed.data?.price
+      ) {
+        const newPrice = parseFloat(parsed.data.price);
+        if (!isNaN(newPrice) && newPrice > 0) {
+          CC_PRICE = newPrice;
+          console.log("cc price:", CC_PRICE);
+        }
       }
     } catch {}
   });
 
   ws.on("close", () => {
-    console.log("❌ WS Disconnected, reconnecting...");
+    console.log("ws disconnected, reconnecting...");
     setTimeout(connectWS, 3000);
   });
 
   ws.on("error", (err) => {
-    console.log("⚠️ WS Error:", err.message);
+    console.log("ws error:", err.message);
     ws.close();
   });
 }
 
 connectWS();
 
-// ================= API FEE =================
+// ================= api fee =================
 async function checkFee() {
   try {
     const res = await axios.post(
@@ -98,45 +125,44 @@ async function checkFee() {
     return { feeAmulet: totalAmulet, feeUSD, feeCC };
 
   } catch (err) {
-    console.log("❌ API Error:", err.message);
+    console.log("api error:", err.message);
     return null;
   }
 }
 
-// ================= INITIAL CHECK =================
+// ================= initial check =================
 async function initialCheck() {
-  console.log("⏳ Waiting CC price...");
+  console.log("waiting cc price...");
 
   let retries = 0;
-  while (!CC_PRICE && retries < 10) {
+  while (!CC_PRICE && retries < 20) {
     await new Promise(r => setTimeout(r, 1000));
     retries++;
   }
 
   if (!CC_PRICE) {
-    console.log("❌ Gagal ambil harga CC");
+    console.log("gagal ambil harga cc setelah 20 detik");
     return;
   }
 
-  console.log("CC Price:", CC_PRICE);
+  console.log("cc price ready:", CC_PRICE);
 
   const result = await checkFee();
   if (!result) {
-    console.log("❌ Gagal ambil fee");
+    console.log("gagal ambil fee");
     return;
   }
 
   const { feeAmulet, feeUSD, feeCC } = result;
-
-  console.log("GAS CHECK");
-  console.log("Amulet:", feeAmulet);
-  console.log("USD:", feeUSD);
-  console.log("CC:", feeCC);
+  console.log("gas check");
+  console.log("amulet:", feeAmulet);
+  console.log("usd:", feeUSD);
+  console.log("cc:", feeCC);
 }
 
 initialCheck();
 
-// ================= LOOP =================
+// ================= loop =================
 setInterval(async () => {
   if (!CC_PRICE) return;
 
@@ -148,28 +174,22 @@ setInterval(async () => {
   users.forEach(chatId => {
     bot.sendMessage(
       chatId,
-      `fee update\n\n` +
-      `Amulet: ${feeAmulet.toFixed(4)}\n` +
-      `USD: $${feeUSD.toFixed(4)}\n` +
-      `CC: ${feeCC.toFixed(4)}`
+      `fee update\n\namulet: ${feeAmulet.toFixed(4)}\nusd: $${feeUSD.toFixed(4)}\ncc: ${feeCC.toFixed(4)}`
     );
   });
 
   if (feeCC < 0.2) {
     users.forEach(chatId => {
-      bot.sendMessage(
-        chatId,
-        `fee cuma ${feeCC.toFixed(4)} CC`
-      );
+      bot.sendMessage(chatId, `fee cuma ${feeCC.toFixed(4)} cc`);
     });
   }
 
 }, INTERVAL);
 
-// ================= PING DUMMY =================
+// ================= ping =================
 setInterval(async () => {
   try {
-    await axios.get("https://api.cantex.io/v2/pools/quote");
-    console.log("🏓 Ping OK");
+    await axios.get("https://api.cantex.io");
+    console.log("ping ok");
   } catch {}
 }, 60000);
